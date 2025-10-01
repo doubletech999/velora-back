@@ -10,9 +10,14 @@ use App\Models\Trip;
 use App\Models\Review;
 use App\Models\Booking;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class AdminController extends Controller
 {
+    // ========================================
+    // DASHBOARD
+    // ========================================
+    
     public function dashboard()
     {
         $stats = [
@@ -87,33 +92,47 @@ class AdminController extends Controller
     
     public function showUser($id)
     {
-        $user = User::with(['guide', 'trips', 'reviews', 'bookings'])->findOrFail($id);
-        return view('admin.users.show', compact('user'));
+        try {
+            $user = User::with(['guide', 'trips', 'reviews', 'bookings'])->findOrFail($id);
+            return view('admin.users.show', compact('user'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.users')
+                ->with('error', 'User not found');
+        }
     }
     
     public function editUser($id)
     {
-        $user = User::findOrFail($id);
-        return view('admin.users.edit', compact('user'));
+        try {
+            $user = User::findOrFail($id);
+            return view('admin.users.edit', compact('user'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.users')
+                ->with('error', 'User not found');
+        }
     }
     
     public function updateUser(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-        
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $id,
-            'role' => 'required|in:user,guide,admin',
-            'language' => 'required|in:en,ar',
-        ]);
-        
         try {
+            $user = User::findOrFail($id);
+            
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email,' . $id,
+                'role' => 'required|in:user,guide,admin',
+                'language' => 'required|in:en,ar',
+            ]);
+            
             $user->update($validated);
             
             return redirect()->route('admin.users')
                 ->with('success', 'User updated successfully!');
                 
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
         } catch (\Exception $e) {
             return redirect()->back()
                 ->withInput()
@@ -148,10 +167,97 @@ class AdminController extends Controller
     // SITES MANAGEMENT
     // ========================================
     
-    public function sites()
+    public function sites(Request $request)
     {
-        $sites = Site::orderBy('id', 'desc')->paginate(15);
+        $query = Site::query();
+        
+        // Filter by type if provided
+        if ($request->has('type') && $request->type != '') {
+            $query->where('type', $request->type);
+        }
+        
+        $sites = $query->orderBy('id', 'desc')->paginate(15);
         return view('admin.sites', compact('sites'));
+    }
+    
+    public function createSite(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'required|string',
+                'latitude' => 'required|numeric|between:-90,90',
+                'longitude' => 'required|numeric|between:-180,180',
+                'type' => 'required|in:historical,natural,cultural',
+                'image_url' => 'nullable|url'
+            ]);
+            
+            $site = Site::create($validated);
+            
+            return redirect()->route('admin.sites')
+                ->with('success', 'Site "' . $site->name . '" created successfully!');
+                
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to create site: ' . $e->getMessage());
+        }
+    }
+    
+    public function showSite($id)
+    {
+        try {
+            $site = Site::with('reviews')->findOrFail($id);
+            return view('admin.sites.show', compact('site'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.sites')
+                ->with('error', 'Site not found');
+        }
+    }
+    
+    public function editSite($id)
+    {
+        try {
+            $site = Site::findOrFail($id);
+            return view('admin.sites.edit', compact('site'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.sites')
+                ->with('error', 'Site not found');
+        }
+    }
+    
+    public function updateSite(Request $request, $id)
+    {
+        try {
+            $site = Site::findOrFail($id);
+            
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'required|string',
+                'latitude' => 'required|numeric|between:-90,90',
+                'longitude' => 'required|numeric|between:-180,180',
+                'type' => 'required|in:historical,natural,cultural',
+                'image_url' => 'nullable|url'
+            ]);
+            
+            $site->update($validated);
+            
+            return redirect()->route('admin.sites')
+                ->with('success', 'Site updated successfully!');
+                
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to update site: ' . $e->getMessage());
+        }
     }
     
     public function deleteSite($id)
@@ -174,10 +280,103 @@ class AdminController extends Controller
     // GUIDES MANAGEMENT
     // ========================================
     
-    public function guides()
+    public function guides(Request $request)
     {
-        $guides = Guide::with('user')->orderBy('id', 'desc')->paginate(15);
+        $query = Guide::with('user');
+        
+        // Filter by status if provided
+        if ($request->has('status') && $request->status != '') {
+            if ($request->status === 'approved') {
+                $query->where('is_approved', true);
+            } elseif ($request->status === 'pending') {
+                $query->where('is_approved', false);
+            }
+        }
+        
+        $guides = $query->orderBy('id', 'desc')->paginate(15);
         return view('admin.guides', compact('guides'));
+    }
+    
+    public function createGuide(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'user_id' => 'required|exists:users,id',
+                'bio' => 'required|string|max:1000',
+                'languages' => 'required|string|max:255',
+                'phone' => 'required|string|max:20',
+                'hourly_rate' => 'required|numeric|min:0|max:999.99',
+                'is_approved' => 'boolean'
+            ]);
+            
+            $guide = Guide::create($validated);
+            
+            // Update user role
+            $guide->user->update(['role' => 'guide']);
+            
+            return redirect()->route('admin.guides')
+                ->with('success', 'Guide created successfully!');
+                
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to create guide: ' . $e->getMessage());
+        }
+    }
+    
+    public function showGuide($id)
+    {
+        try {
+            $guide = Guide::with(['user', 'bookings', 'reviews'])->findOrFail($id);
+            return view('admin.guides.show', compact('guide'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.guides')
+                ->with('error', 'Guide not found');
+        }
+    }
+    
+    public function editGuide($id)
+    {
+        try {
+            $guide = Guide::with('user')->findOrFail($id);
+            return view('admin.guides.edit', compact('guide'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.guides')
+                ->with('error', 'Guide not found');
+        }
+    }
+    
+    public function updateGuide(Request $request, $id)
+    {
+        try {
+            $guide = Guide::findOrFail($id);
+            
+            $validated = $request->validate([
+                'bio' => 'required|string|max:1000',
+                'languages' => 'required|string|max:255',
+                'phone' => 'required|string|max:20',
+                'hourly_rate' => 'required|numeric|min:0|max:999.99',
+                'is_approved' => 'boolean'
+            ]);
+            
+            $guide->update($validated);
+            
+            return redirect()->route('admin.guides')
+                ->with('success', 'Guide updated successfully!');
+                
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to update guide: ' . $e->getMessage());
+        }
     }
     
     public function approveGuide($id)
@@ -219,10 +418,88 @@ class AdminController extends Controller
     // TRIPS MANAGEMENT
     // ========================================
     
-    public function trips()
+    public function trips(Request $request)
     {
-        $trips = Trip::with('user')->orderBy('id', 'desc')->paginate(15);
+        $query = Trip::with('user');
+        
+        // Filter by status if provided
+        if ($request->has('status') && $request->status != '') {
+            $now = now();
+            
+            switch ($request->status) {
+                case 'upcoming':
+                    $query->where('start_date', '>', $now->format('Y-m-d'));
+                    break;
+                case 'ongoing':
+                    $query->where('start_date', '<=', $now->format('Y-m-d'))
+                          ->where('end_date', '>=', $now->format('Y-m-d'));
+                    break;
+                case 'completed':
+                    $query->where('end_date', '<', $now->format('Y-m-d'));
+                    break;
+            }
+        }
+        
+        $trips = $query->orderBy('id', 'desc')->paginate(15);
         return view('admin.trips', compact('trips'));
+    }
+    
+    public function showTrip($id)
+    {
+        try {
+            $trip = Trip::with(['user'])->findOrFail($id);
+            
+            // Get site details
+            $sites = Site::whereIn('id', $trip->sites)->get();
+            
+            return view('admin.trips.show', compact('trip', 'sites'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.trips')
+                ->with('error', 'Trip not found');
+        }
+    }
+    
+    public function editTrip($id)
+    {
+        try {
+            $trip = Trip::with('user')->findOrFail($id);
+            $sites = Site::all();
+            
+            return view('admin.trips.edit', compact('trip', 'sites'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.trips')
+                ->with('error', 'Trip not found');
+        }
+    }
+    
+    public function updateTrip(Request $request, $id)
+    {
+        try {
+            $trip = Trip::findOrFail($id);
+            
+            $validated = $request->validate([
+                'trip_name' => 'required|string|max:255',
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after_or_equal:start_date',
+                'description' => 'nullable|string',
+                'sites' => 'required|array|min:1',
+                'sites.*' => 'exists:sites,id'
+            ]);
+            
+            $trip->update($validated);
+            
+            return redirect()->route('admin.trips')
+                ->with('success', 'Trip updated successfully!');
+                
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to update trip: ' . $e->getMessage());
+        }
     }
     
     public function deleteTrip($id)
@@ -245,10 +522,37 @@ class AdminController extends Controller
     // REVIEWS MANAGEMENT
     // ========================================
     
-    public function reviews()
+    public function reviews(Request $request)
     {
-        $reviews = Review::with(['user', 'site', 'guide'])->orderBy('id', 'desc')->paginate(15);
+        $query = Review::with(['user', 'site', 'guide.user']);
+        
+        // Filter by type if provided
+        if ($request->has('type') && $request->type != '') {
+            if ($request->type === 'site') {
+                $query->whereNotNull('site_id');
+            } elseif ($request->type === 'guide') {
+                $query->whereNotNull('guide_id');
+            }
+        }
+        
+        // Filter by rating if provided
+        if ($request->has('rating') && $request->rating != '') {
+            $query->where('rating', $request->rating);
+        }
+        
+        $reviews = $query->orderBy('id', 'desc')->paginate(15);
         return view('admin.reviews', compact('reviews'));
+    }
+    
+    public function showReview($id)
+    {
+        try {
+            $review = Review::with(['user', 'site', 'guide.user'])->findOrFail($id);
+            return view('admin.reviews.show', compact('review'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.reviews')
+                ->with('error', 'Review not found');
+        }
     }
     
     public function deleteReview($id)
@@ -270,10 +574,58 @@ class AdminController extends Controller
     // BOOKINGS MANAGEMENT
     // ========================================
     
-    public function bookings()
+    public function bookings(Request $request)
     {
-        $bookings = Booking::with(['user', 'guide'])->orderBy('id', 'desc')->paginate(15);
+        $query = Booking::with(['user', 'guide.user']);
+        
+        // Filter by status if provided
+        if ($request->has('status') && $request->status != '') {
+            $query->where('status', $request->status);
+        }
+        
+        // Filter by date if provided
+        if ($request->has('date') && $request->date != '') {
+            $query->whereDate('booking_date', $request->date);
+        }
+        
+        $bookings = $query->orderBy('booking_date', 'desc')
+                          ->orderBy('start_time', 'desc')
+                          ->paginate(15);
+        
         return view('admin.bookings', compact('bookings'));
+    }
+    
+    public function showBooking($id)
+    {
+        try {
+            $booking = Booking::with(['user', 'guide.user'])->findOrFail($id);
+            return view('admin.bookings.show', compact('booking'));
+        } catch (\Exception $e) {
+            return redirect()->route('admin.bookings')
+                ->with('error', 'Booking not found');
+        }
+    }
+    
+    public function updateBookingStatus(Request $request, $id)
+    {
+        try {
+            $validated = $request->validate([
+                'status' => 'required|in:pending,confirmed,cancelled,completed'
+            ]);
+            
+            $booking = Booking::findOrFail($id);
+            $booking->update(['status' => $validated['status']]);
+            
+            return redirect()->route('admin.bookings')
+                ->with('success', 'Booking status updated successfully!');
+                
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->with('error', 'Failed to update booking: ' . $e->getMessage());
+        }
     }
     
     public function deleteBooking($id)
