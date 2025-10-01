@@ -1,144 +1,70 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login - Velora</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-</head>
-<body class="bg-gradient-to-br from-green-400 to-green-600 min-h-screen flex items-center justify-center">
-    <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-        <!-- Logo -->
-        <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-4">
-                <i class="fas fa-map-marked-alt text-4xl text-green-600"></i>
-            </div>
-            <h1 class="text-2xl font-bold text-gray-800">Velora Admin</h1>
-            <p class="text-gray-600 mt-2">Sign in to access admin panel</p>
-        </div>
+<?php
 
-        <!-- Success Messages (for logout) -->
-        @if(session('success'))
-        <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 animate-fade-in">
-            <div class="flex items-center">
-                <i class="fas fa-check-circle mr-2"></i>
-                <p class="text-sm">{{ session('success') }}</p>
-            </div>
-        </div>
-        @endif
+namespace App\Http\Controllers;
 
-        <!-- Error Messages -->
-        @if($errors->any())
-        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-            @foreach($errors->all() as $error)
-                <div class="flex items-center">
-                    <i class="fas fa-exclamation-circle mr-2"></i>
-                    <p class="text-sm">{{ $error }}</p>
-                </div>
-            @endforeach
-        </div>
-        @endif
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
 
-        <!-- Login Form -->
-        <form method="POST" action="{{ route('admin.login.submit') }}">
-            @csrf
-            
-            <div class="mb-6">
-                <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
-                    <i class="fas fa-envelope mr-2"></i>Email Address
-                </label>
-                <input 
-                    type="email" 
-                    id="email" 
-                    name="email" 
-                    value="{{ old('email') }}"
-                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="admin@velora.com"
-                    required
-                    autofocus
-                >
-            </div>
-
-            <div class="mb-6">
-                <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-                    <i class="fas fa-lock mr-2"></i>Password
-                </label>
-                <input 
-                    type="password" 
-                    id="password" 
-                    name="password" 
-                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="Enter your password"
-                    required
-                >
-            </div>
-
-            <div class="mb-6">
-                <label class="flex items-center">
-                    <input 
-                        type="checkbox" 
-                        name="remember" 
-                        class="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                    >
-                    <span class="ml-2 text-sm text-gray-600">Remember me</span>
-                </label>
-            </div>
-
-            <button 
-                type="submit" 
-                class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
-            >
-                <i class="fas fa-sign-in-alt mr-2"></i>Sign In
-            </button>
-        </form>
-
-        <!-- Footer -->
-        <div class="mt-8 text-center">
-            <p class="text-xs text-gray-500">
-                &copy; 2025 Velora Tourism. All rights reserved.
-            </p>
-        </div>
-    </div>
-
-    <!-- Demo Credentials Notice -->
-    <div class="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg p-4 max-w-xs">
-        <p class="text-sm font-semibold text-gray-800 mb-2">
-            <i class="fas fa-info-circle text-blue-500 mr-2"></i>Demo Credentials
-        </p>
-        <p class="text-xs text-gray-600">Email: admin@velora.com</p>
-        <p class="text-xs text-gray-600">Password: admin123456</p>
-    </div>
-
-    <style>
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+class AdminAuthController extends Controller
+{
+    /**
+     * Show the admin login form
+     */
+    public function showLoginForm()
+    {
+        // If already authenticated as admin, redirect to dashboard
+        if (Auth::check() && Auth::user()->role === 'admin') {
+            return redirect()->route('admin.dashboard');
         }
         
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
-        }
-    </style>
+        return view('admin.login');
+    }
 
-    <script>
-        // Auto-hide success message after 5 seconds
-        document.addEventListener('DOMContentLoaded', function() {
-            const successAlert = document.querySelector('.bg-green-50');
-            if (successAlert) {
-                setTimeout(() => {
-                    successAlert.style.transition = 'opacity 0.5s';
-                    successAlert.style.opacity = '0';
-                    setTimeout(() => successAlert.remove(), 500);
-                }, 5000);
+    /**
+     * Handle admin login
+     */
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required',
+        ]);
+
+        $remember = $request->has('remember');
+
+        // Attempt authentication
+        if (Auth::attempt($credentials, $remember)) {
+            $user = Auth::user();
+            
+            // Check if user is admin
+            if ($user->role === 'admin') {
+                $request->session()->regenerate();
+                return redirect()->intended(route('admin.dashboard'));
             }
-        });
-    </script>
-</body>
-</html>
+            
+            // If not admin, logout and return error
+            Auth::logout();
+            return back()->withErrors([
+                'email' => 'You do not have admin privileges.',
+            ]);
+        }
+
+        return back()->withErrors([
+            'email' => 'The provided credentials do not match our records.',
+        ])->withInput($request->only('email'));
+    }
+
+    /**
+     * Handle admin logout
+     */
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        
+        return redirect()->route('admin.login')->with('success', 'You have been logged out successfully.');
+    }
+}
