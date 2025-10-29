@@ -59,9 +59,11 @@ return [
     'strict' => true,
     'engine' => null,
 
-    'options' => extension_loaded('pdo_mysql') ? array_filter([
-        PDO::MYSQL_ATTR_SSL_CA => base_path('ca.pem'),
-    ]) : [],
+    // ✅ أهم جزء
+    'options' => [
+        PDO::MYSQL_ATTR_SSL_CA => base_path('certs/ca.pem'),
+        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
+    ],
 ],
 
         'pgsql' => [
