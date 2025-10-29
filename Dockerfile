@@ -2,44 +2,38 @@ FROM php:8.2-fpm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
     default-mysql-client \
+    git \
+    unzip \
+    libzip-dev \
     libpng-dev \
     libjpeg-dev \
-    libfreetype6-dev \
-    libonig-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    git \
-    curl
+    libfreetype6-dev
 
 # Install PHP extensions
-RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg
+RUN docker-php-ext-install pdo pdo_mysql zip gd
 
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# ✅ Copy SSL CA File
-COPY certs/ca.pem /etc/ssl/certs/ca.pem
-
-# Set working directory
+# Set working folder
 WORKDIR /var/www/html
 
 # Copy app
 COPY . .
 
-# Install dependencies
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader
+# ✅ Copy SSL CA
+COPY ./certs/ca.pem /etc/ssl/certs/ca.pem
 
-# Copy environment
+# Install dependencies
+RUN composer install --no-dev --optimize-autoloader
+
+# Create ENV if missing
 RUN cp .env.example .env || true
 
-# Laravel key
+# Generate app key
 RUN php artisan key:generate
-
-# Permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
 EXPOSE 8000
 
