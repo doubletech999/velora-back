@@ -24,15 +24,15 @@ WORKDIR /var/www/html
 COPY . .
 
 # ✅ Copy SSL CA
-COPY ./certs/ca.pem /etc/ssl/certs/ca.pem
+COPY certs/ca.pem /etc/ssl/certs/ca.pem
 
-# Install dependencies
+# Install deps
 RUN composer install --no-dev --optimize-autoloader
 
 # Create ENV if missing
 RUN cp .env.example .env || true
 
-# Generate app key
+# Laravel key
 RUN php artisan key:generate
 
 EXPOSE 8000
